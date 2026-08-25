@@ -1,4 +1,5 @@
 import { createEventJournal } from "./events.js";
+import { createPluginRegistry } from "./plugins.js";
 import { createSeededRandom } from "./random.js";
 import {
   createSnapshotRecord,
@@ -20,25 +21,10 @@ function assertAction(action) {
   }
 }
 
-function normalizeSystem(system, index) {
-  if (!system || typeof system !== "object") {
-    throw new TypeError(`System at index ${index} must be an object.`);
-  }
-
-  if (typeof system.id !== "string" || system.id.trim() === "") {
-    throw new TypeError(`System at index ${index} requires a non-empty id.`);
-  }
-
-  if (typeof system.onAction !== "function") {
-    throw new TypeError(`System "${system.id}" requires an onAction function.`);
-  }
-
-  return system;
-}
-
 export function createEngine({
   initialState = {},
   systems = [],
+  plugins = [],
   eventHistoryLimit = 1000,
   seed = 0,
   branchId = "main"
@@ -47,7 +33,7 @@ export function createEngine({
   let revision = 0;
   let actionSequence = 0;
   const listeners = new Set();
-  const normalizedSystems = systems.map(normalizeSystem);
+  const pluginRegistry = createPluginRegistry([...systems, ...plugins]);
   const events = createEventJournal({ historyLimit: eventHistoryLimit });
   const random = createSeededRandom(seed);
   const randomApi = Object.freeze({
@@ -69,6 +55,36 @@ export function createEngine({
 
     listeners.add(listener);
     return () => listeners.delete(listener);
+  }
+
+  function pluginContext(pluginId) {
+    return Object.freeze({
+      pluginId,
+      getEvents: events.read,
+      getState,
+      random: randomApi
+    });
+  }
+
+  function registerPlugin(plugin) {
+    const metadata = pluginRegistry.register(plugin);
+    const registered = pluginRegistry.ordered().find((item) => item.id === metadata.id);
+
+    try {
+      registered.setup?.(pluginContext(registered.id));
+    } catch (error) {
+      pluginRegistry.remove(registered.id);
+      throw error;
+    }
+
+    return metadata;
+  }
+
+  function unregisterPlugin(pluginId) {
+    const plugin = pluginRegistry.remove(pluginId);
+    if (!plugin) return false;
+    plugin.dispose?.(pluginContext(plugin.id));
+    return true;
   }
 
   function snapshot({ label } = {}) {
@@ -127,13 +143,15 @@ export function createEngine({
     const previousRandomState = random.getState();
 
     try {
-      for (const system of normalizedSystems) {
-        const response = system.onAction({
+      for (const plugin of pluginRegistry.ordered()) {
+        if (!plugin.onAction) continue;
+
+        const response = plugin.onAction({
           action: cloneValue(action),
           random: randomApi,
           state: cloneValue(candidateState),
           emit(event) {
-            pendingEvents.push({ ...cloneValue(event), source: event.source ?? system.id });
+            pendingEvents.push({ ...cloneValue(event), source: event.source ?? plugin.id });
           }
         });
 
@@ -142,7 +160,7 @@ export function createEngine({
           return {
             accepted: false,
             action,
-            reason: response.reason ?? `Rejected by ${system.id}`,
+            reason: response.reason ?? `Rejected by ${plugin.id}`,
             revision,
             state: getState()
           };
@@ -154,7 +172,7 @@ export function createEngine({
 
         if (Array.isArray(response?.events)) {
           for (const event of response.events) {
-            pendingEvents.push({ ...cloneValue(event), source: event.source ?? system.id });
+            pendingEvents.push({ ...cloneValue(event), source: event.source ?? plugin.id });
           }
         }
       }
@@ -168,10 +186,24 @@ export function createEngine({
 
     const emittedEvents = [];
     const eventListenerErrors = [];
+    const pluginErrors = [];
     for (const event of pendingEvents) {
       const publication = events.publish(event, { tick: revision });
       emittedEvents.push(publication.event);
       eventListenerErrors.push(...publication.listenerErrors);
+
+      for (const plugin of pluginRegistry.ordered()) {
+        if (!plugin.onEvent) continue;
+        try {
+          plugin.onEvent({
+            event: cloneValue(publication.event),
+            random: randomApi,
+            state: getState()
+          });
+        } catch (error) {
+          pluginErrors.push(error);
+        }
+      }
     }
 
     const result = {
@@ -181,7 +213,8 @@ export function createEngine({
       state: getState(),
       events: emittedEvents,
       listenerErrors: [],
-      eventListenerErrors
+      eventListenerErrors,
+      pluginErrors
     };
 
     for (const listener of listeners) {
@@ -200,15 +233,24 @@ export function createEngine({
     return result;
   }
 
-  return Object.freeze({
+  const engine = Object.freeze({
     dispatch,
     fork,
     getEvents: events.read,
+    getPlugins: pluginRegistry.list,
     getRandomState: random.getState,
     getState,
+    registerPlugin,
     restore,
     snapshot,
     subscribe,
-    subscribeToEvents: events.subscribe
+    subscribeToEvents: events.subscribe,
+    unregisterPlugin
   });
+
+  for (const plugin of pluginRegistry.ordered()) {
+    plugin.setup?.(pluginContext(plugin.id));
+  }
+
+  return engine;
 }
