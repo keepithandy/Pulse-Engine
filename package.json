@@ -1,0 +1,17 @@
+{
+  "name": "@keepithandy/pulse-engine",
+  "version": "0.1.0-alpha.0",
+  "description": "A deterministic, event-driven JavaScript simulation engine.",
+  "type": "module",
+  "exports": "./src/index.js",
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
