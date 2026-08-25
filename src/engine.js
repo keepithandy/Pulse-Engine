@@ -1,3 +1,5 @@
+import { createEventJournal } from "./events.js";
+
 function cloneValue(value) {
   return structuredClone(value);
 }
@@ -28,12 +30,17 @@ function normalizeSystem(system, index) {
   return system;
 }
 
-export function createEngine({ initialState = {}, systems = [] } = {}) {
+export function createEngine({
+  initialState = {},
+  systems = [],
+  eventHistoryLimit = 1000
+} = {}) {
   let state = cloneValue(initialState);
   let revision = 0;
   let actionSequence = 0;
   const listeners = new Set();
   const normalizedSystems = systems.map(normalizeSystem);
+  const events = createEventJournal({ historyLimit: eventHistoryLimit });
 
   function getState() {
     return cloneValue(state);
@@ -55,11 +62,15 @@ export function createEngine({ initialState = {}, systems = [] } = {}) {
     action.id ??= `action-${String(++actionSequence).padStart(6, "0")}`;
     const previousState = getState();
     let candidateState = previousState;
+    const pendingEvents = [];
 
     for (const system of normalizedSystems) {
       const response = system.onAction({
         action: cloneValue(action),
-        state: cloneValue(candidateState)
+        state: cloneValue(candidateState),
+        emit(event) {
+          pendingEvents.push({ ...cloneValue(event), source: event.source ?? system.id });
+        }
       });
 
       if (response?.accepted === false) {
@@ -75,17 +86,33 @@ export function createEngine({ initialState = {}, systems = [] } = {}) {
       if (response && Object.hasOwn(response, "state")) {
         candidateState = cloneValue(response.state);
       }
+
+      if (Array.isArray(response?.events)) {
+        for (const event of response.events) {
+          pendingEvents.push({ ...cloneValue(event), source: event.source ?? system.id });
+        }
+      }
     }
 
     state = cloneValue(candidateState);
     revision += 1;
+
+    const emittedEvents = [];
+    const eventListenerErrors = [];
+    for (const event of pendingEvents) {
+      const publication = events.publish(event, { tick: revision });
+      emittedEvents.push(publication.event);
+      eventListenerErrors.push(...publication.listenerErrors);
+    }
 
     const result = {
       accepted: true,
       action,
       revision,
       state: getState(),
-      listenerErrors: []
+      events: emittedEvents,
+      listenerErrors: [],
+      eventListenerErrors
     };
 
     for (const listener of listeners) {
@@ -104,5 +131,11 @@ export function createEngine({ initialState = {}, systems = [] } = {}) {
     return result;
   }
 
-  return Object.freeze({ dispatch, getState, subscribe });
+  return Object.freeze({
+    dispatch,
+    getEvents: events.read,
+    getState,
+    subscribe,
+    subscribeToEvents: events.subscribe
+  });
 }
