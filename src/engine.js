@@ -1,5 +1,10 @@
 import { createEventJournal } from "./events.js";
 import { createSeededRandom } from "./random.js";
+import {
+  createSnapshotRecord,
+  forkSnapshotRecord,
+  validateSnapshotRecord
+} from "./snapshots.js";
 
 function cloneValue(value) {
   return structuredClone(value);
@@ -35,7 +40,8 @@ export function createEngine({
   initialState = {},
   systems = [],
   eventHistoryLimit = 1000,
-  seed = 0
+  seed = 0,
+  branchId = "main"
 } = {}) {
   let state = cloneValue(initialState);
   let revision = 0;
@@ -50,6 +56,7 @@ export function createEngine({
     next: random.next,
     pick: random.pick
   });
+  let branch = { id: branchId, parentId: null };
 
   function getState() {
     return cloneValue(state);
@@ -62,6 +69,51 @@ export function createEngine({
 
     listeners.add(listener);
     return () => listeners.delete(listener);
+  }
+
+  function snapshot({ label } = {}) {
+    return createSnapshotRecord({
+      actionSequence,
+      branch,
+      events: events.exportState(),
+      label,
+      randomState: random.getState(),
+      revision,
+      state: getState()
+    });
+  }
+
+  function restore(input) {
+    const next = validateSnapshotRecord(input);
+    const previous = snapshot();
+
+    try {
+      random.setState(next.randomState);
+      events.restoreState(next.events);
+      state = cloneValue(next.state);
+      revision = next.revision;
+      actionSequence = next.actionSequence;
+      branch = cloneValue(next.branch);
+    } catch (error) {
+      random.setState(previous.randomState);
+      events.restoreState(previous.events);
+      state = cloneValue(previous.state);
+      revision = previous.revision;
+      actionSequence = previous.actionSequence;
+      branch = cloneValue(previous.branch);
+      throw error;
+    }
+
+    return {
+      restored: true,
+      branch: cloneValue(branch),
+      revision,
+      state: getState()
+    };
+  }
+
+  function fork(nextBranchId) {
+    return forkSnapshotRecord(snapshot(), nextBranchId);
   }
 
   function dispatch(input) {
@@ -150,9 +202,12 @@ export function createEngine({
 
   return Object.freeze({
     dispatch,
+    fork,
     getEvents: events.read,
     getRandomState: random.getState,
     getState,
+    restore,
+    snapshot,
     subscribe,
     subscribeToEvents: events.subscribe
   });
