@@ -78,3 +78,25 @@ test("rejects malformed actions", () => {
 
   assert.throws(() => engine.dispatch({}), /non-empty type/);
 });
+
+test("publishes system events only after an accepted action", () => {
+  const engine = createEngine({
+    initialState: { count: 0 },
+    systems: [{
+      id: "eventful-counter",
+      onAction({ action, state, emit }) {
+        emit({ type: "counter/considered", payload: { action: action.type } });
+        if (action.type === "counter/reject") {
+          return { accepted: false, reason: "locked" };
+        }
+        return { state };
+      }
+    }]
+  });
+
+  engine.dispatch({ type: "counter/reject" });
+  const accepted = engine.dispatch({ type: "counter/inspect" });
+
+  assert.equal(engine.getEvents().length, 1);
+  assert.equal(accepted.events[0].source, "eventful-counter");
+});
