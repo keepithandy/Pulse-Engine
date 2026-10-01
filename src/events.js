@@ -96,5 +96,36 @@ export function createEventJournal({ historyLimit = 1000 } = {}) {
       .map((event) => deepFreeze(cloneValue(event)));
   }
 
-  return Object.freeze({ publish, read, subscribe });
+  function exportState() {
+    return deepFreeze({
+      format: "pulse-event-journal",
+      version: 1,
+      sequence,
+      history: read()
+    });
+  }
+
+  function restoreState(snapshot) {
+    if (
+      !snapshot ||
+      snapshot.format !== "pulse-event-journal" ||
+      snapshot.version !== 1 ||
+      !Number.isInteger(snapshot.sequence) ||
+      snapshot.sequence < 0 ||
+      !Array.isArray(snapshot.history)
+    ) {
+      throw new TypeError("Invalid Pulse Engine event journal state.");
+    }
+
+    for (const event of snapshot.history) {
+      assertEvent(event);
+    }
+
+    sequence = snapshot.sequence;
+    history = snapshot.history
+      .slice(-historyLimit)
+      .map((event) => deepFreeze(cloneValue(event)));
+  }
+
+  return Object.freeze({ exportState, publish, read, restoreState, subscribe });
 }
