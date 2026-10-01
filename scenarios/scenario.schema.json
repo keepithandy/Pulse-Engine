@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/keepithandy/Pulse-Engine/scenarios/scenario.schema.json",
+  "title": "Pulse Engine scenario v1",
+  "type": "object",
+  "required": ["version", "seed", "systems", "entities", "resources", "relationships"],
+  "properties": {
+    "version": {"const": 1},
+    "seed": {"type": ["number", "string"]},
+    "systems": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "entities": {"type": "array", "items": {"type": "object", "required": ["id", "type"], "properties": {"id": {"type": "string", "minLength": 1}, "type": {"type": "string", "minLength": 1}}}},
+    "resources": {"type": "object", "additionalProperties": {"type": "number"}},
+    "relationships": {"type": "array", "items": {"type": "object", "required": ["from", "to", "type"], "properties": {"from": {"type": "string", "minLength": 1}, "to": {"type": "string", "minLength": 1}, "type": {"type": "string", "minLength": 1}}}},
+    "gameData": {"type": "object", "description": "Consumer-owned extension data; validateGameData adds custom checks."}
+  }
+}

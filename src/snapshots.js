@@ -32,7 +32,9 @@ export function createSnapshotRecord({
   label,
   randomState,
   revision,
-  state
+  state,
+  tick = 0,
+  schedules = { version: 1, sequence: 0, jobs: [] }
 }) {
   assertBranchId(branch?.id);
 
@@ -47,6 +49,8 @@ export function createSnapshotRecord({
     },
     revision,
     actionSequence,
+    tick,
+    schedules,
     state,
     randomState,
     events
@@ -54,7 +58,7 @@ export function createSnapshotRecord({
 }
 
 export function validateSnapshotRecord(input) {
-  const snapshot = cloneValue(input);
+  const snapshot = copyData(input);
 
   if (!snapshot || snapshot.format !== SNAPSHOT_FORMAT) {
     throw new TypeError("Invalid Pulse Engine snapshot format.");
@@ -70,15 +74,19 @@ export function validateSnapshotRecord(input) {
     );
   }
 
-  if (!Number.isInteger(snapshot.revision) || snapshot.revision < 0) {
+  if (!Number.isSafeInteger(snapshot.revision) || snapshot.revision < 0) {
     throw new TypeError("Snapshot revision must be a non-negative integer.");
   }
 
-  if (!Number.isInteger(snapshot.actionSequence) || snapshot.actionSequence < 0) {
+  if (!Number.isSafeInteger(snapshot.actionSequence) || snapshot.actionSequence < 0) {
     throw new TypeError("Snapshot actionSequence must be a non-negative integer.");
   }
 
   assertBranchId(snapshot.branch?.id);
+  if (snapshot.branch.parentId !== null) assertBranchId(snapshot.branch.parentId);
+  snapshot.tick ??= 0;
+  snapshot.schedules ??= { version: 1, sequence: 0, jobs: [] };
+  assertCounter(snapshot.tick, "Snapshot tick");
   return snapshot;
 }
 
@@ -95,3 +103,4 @@ export function forkSnapshotRecord(snapshot, branchId) {
     }
   });
 }
+import { assertCounter, copyData } from "./data.js";
