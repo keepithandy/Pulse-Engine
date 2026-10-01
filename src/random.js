@@ -30,7 +30,7 @@ function assertFiniteRange(min, max) {
 }
 
 export function createSeededRandom(seed = 0) {
-  const normalizedSeed = normalizeSeed(seed);
+  let normalizedSeed = normalizeSeed(seed);
   let state = normalizedSeed;
 
   function next() {
@@ -75,12 +75,14 @@ export function createSeededRandom(seed = 0) {
     if (
       !snapshot ||
       snapshot.algorithm !== ALGORITHM ||
-      !Number.isInteger(snapshot.state)
+      !Number.isInteger(snapshot.state) || snapshot.state < 0 || snapshot.state > 0xffffffff ||
+      !Number.isInteger(snapshot.seed) || snapshot.seed < 0 || snapshot.seed > 0xffffffff
     ) {
       throw new TypeError("Invalid seeded-random state.");
     }
 
-    state = snapshot.state >>> 0;
+    normalizedSeed = snapshot.seed;
+    state = snapshot.state;
   }
 
   return Object.freeze({ float, getState, integer, next, pick, setState });

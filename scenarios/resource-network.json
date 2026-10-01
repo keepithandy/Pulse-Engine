@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "seed": "resource-network",
+  "systems": ["resource-flow"],
+  "entities": [{"id": "source", "type": "producer"}, {"id": "store", "type": "storage"}],
+  "resources": {"energy": 0, "water": 10},
+  "relationships": [{"from": "source", "to": "store", "type": "supplies"}],
+  "gameData": {"production": {"energy": 2, "water": 1}}
+}

@@ -23,6 +23,11 @@ function assertEvent(event) {
   if (typeof event.type !== "string" || event.type.trim() === "") {
     throw new TypeError("Pulse Engine events require a non-empty type.");
   }
+  copyData(event);
+  if (event.version !== undefined && event.version !== 1) throw new RangeError("Unsupported event version.");
+  if (event.id !== undefined && (typeof event.id !== "string" || !event.id.trim())) throw new TypeError("Event ids must be non-empty strings.");
+  if (event.tick !== undefined) assertCounter(event.tick, "Event tick");
+  if (event.source !== undefined && (typeof event.source !== "string" || !event.source.trim())) throw new TypeError("Event source must be a non-empty string.");
 }
 
 export function createEventJournal({ historyLimit = 1000 } = {}) {
@@ -35,11 +40,13 @@ export function createEventJournal({ historyLimit = 1000 } = {}) {
   const subscribers = new Set();
 
   function publish(input, defaults = {}) {
-    assertEvent(input);
+    input = prepare([input], defaults)[0];
+    sequence += 1;
 
     const event = deepFreeze({
       ...cloneValue(input),
-      id: input.id ?? `event-${String(++sequence).padStart(6, "0")}`,
+      id: input.id ?? `event-${String(sequence).padStart(6, "0")}`,
+      version: 1,
       type: input.type.trim(),
       tick: input.tick ?? defaults.tick ?? 0,
       source: input.source ?? defaults.source ?? "engine",
@@ -91,6 +98,7 @@ export function createEventJournal({ historyLimit = 1000 } = {}) {
       ? history.filter((event) => event.type === type)
       : history;
 
+    if (limit === 0) return [];
     return selected
       .slice(-limit)
       .map((event) => deepFreeze(cloneValue(event)));
@@ -110,22 +118,32 @@ export function createEventJournal({ historyLimit = 1000 } = {}) {
       !snapshot ||
       snapshot.format !== "pulse-event-journal" ||
       snapshot.version !== 1 ||
-      !Number.isInteger(snapshot.sequence) ||
+      !Number.isSafeInteger(snapshot.sequence) ||
       snapshot.sequence < 0 ||
       !Array.isArray(snapshot.history)
     ) {
       throw new TypeError("Invalid Pulse Engine event journal state.");
     }
 
-    for (const event of snapshot.history) {
+    const candidate = copyData(snapshot);
+    for (const event of candidate.history) {
       assertEvent(event);
     }
 
-    sequence = snapshot.sequence;
-    history = snapshot.history
+    sequence = candidate.sequence;
+    history = candidate.history
       .slice(-historyLimit)
       .map((event) => deepFreeze(cloneValue(event)));
   }
 
-  return Object.freeze({ exportState, publish, read, restoreState, subscribe });
+  function prepare(inputs, defaults = {}) {
+    return freezeData(inputs.map(input => {
+      assertEvent(input);
+      const event = { ...copyData(input), tick: input.tick ?? defaults.tick ?? 0, source: input.source ?? defaults.source ?? "engine" };
+      assertEvent(event);
+      return event;
+    }));
+  }
+  return Object.freeze({ exportState, prepare, publish, read, restoreState, subscribe });
 }
+import { assertCounter, copyData, freezeData } from "./data.js";
