@@ -1,4 +1,5 @@
 import { createEventJournal } from "./events.js";
+import { createSeededRandom } from "./random.js";
 
 function cloneValue(value) {
   return structuredClone(value);
@@ -33,7 +34,8 @@ function normalizeSystem(system, index) {
 export function createEngine({
   initialState = {},
   systems = [],
-  eventHistoryLimit = 1000
+  eventHistoryLimit = 1000,
+  seed = 0
 } = {}) {
   let state = cloneValue(initialState);
   let revision = 0;
@@ -41,6 +43,13 @@ export function createEngine({
   const listeners = new Set();
   const normalizedSystems = systems.map(normalizeSystem);
   const events = createEventJournal({ historyLimit: eventHistoryLimit });
+  const random = createSeededRandom(seed);
+  const randomApi = Object.freeze({
+    float: random.float,
+    integer: random.integer,
+    next: random.next,
+    pick: random.pick
+  });
 
   function getState() {
     return cloneValue(state);
@@ -63,35 +72,43 @@ export function createEngine({
     const previousState = getState();
     let candidateState = previousState;
     const pendingEvents = [];
+    const previousRandomState = random.getState();
 
-    for (const system of normalizedSystems) {
-      const response = system.onAction({
-        action: cloneValue(action),
-        state: cloneValue(candidateState),
-        emit(event) {
-          pendingEvents.push({ ...cloneValue(event), source: event.source ?? system.id });
+    try {
+      for (const system of normalizedSystems) {
+        const response = system.onAction({
+          action: cloneValue(action),
+          random: randomApi,
+          state: cloneValue(candidateState),
+          emit(event) {
+            pendingEvents.push({ ...cloneValue(event), source: event.source ?? system.id });
+          }
+        });
+
+        if (response?.accepted === false) {
+          random.setState(previousRandomState);
+          return {
+            accepted: false,
+            action,
+            reason: response.reason ?? `Rejected by ${system.id}`,
+            revision,
+            state: getState()
+          };
         }
-      });
 
-      if (response?.accepted === false) {
-        return {
-          accepted: false,
-          action,
-          reason: response.reason ?? `Rejected by ${system.id}`,
-          revision,
-          state: getState()
-        };
-      }
+        if (response && Object.hasOwn(response, "state")) {
+          candidateState = cloneValue(response.state);
+        }
 
-      if (response && Object.hasOwn(response, "state")) {
-        candidateState = cloneValue(response.state);
-      }
-
-      if (Array.isArray(response?.events)) {
-        for (const event of response.events) {
-          pendingEvents.push({ ...cloneValue(event), source: event.source ?? system.id });
+        if (Array.isArray(response?.events)) {
+          for (const event of response.events) {
+            pendingEvents.push({ ...cloneValue(event), source: event.source ?? system.id });
+          }
         }
       }
+    } catch (error) {
+      random.setState(previousRandomState);
+      throw error;
     }
 
     state = cloneValue(candidateState);
@@ -134,6 +151,7 @@ export function createEngine({
   return Object.freeze({
     dispatch,
     getEvents: events.read,
+    getRandomState: random.getState,
     getState,
     subscribe,
     subscribeToEvents: events.subscribe
