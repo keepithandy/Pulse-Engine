@@ -84,6 +84,39 @@ plug-ins, events and traces. `redact(data)` runs on a copy for consumer-owned fi
 `eventHistoryLimit` and `traceLimit` bound memory. `diagnostics: false` disables trace
 collection and makes inspect/explanation queries return null.
 
+## Entity/component world
+
+Install the generic world model as a system with `createWorldPlugin()`. It stores
+entities under `state.world`, so the existing snapshot, restore and save APIs include
+the world automatically. Entity ids are generated in deterministic creation order;
+explicit ids are supported. Entities have a type and a map of JSON-safe components.
+
+Supported actions are `world/entity.create`, `world/entity.destroy`,
+`world/component.set` and `world/component.remove`. Successful mutations emit
+versioned world events. Duplicate ids, unknown entities and missing components are
+rejected without committing state. Component names and ids cannot use prototype
+reserved keys.
+
+`getEntity(state, id)` returns a detached entity record or `null`.
+`queryEntities(state, { type, with, without })` returns detached records in creation
+order, filtered by entity type and required or excluded component names.
+
+```js
+import { createEngine, createWorldPlugin, queryEntities } from "@keepithandy/pulse-engine";
+
+const engine = createEngine({ systems: [createWorldPlugin()] });
+engine.dispatch({
+  type: "world/entity.create",
+  entityType: "worker",
+  components: { position: { x: 3, y: 5 }, health: 100 }
+});
+
+const workers = queryEntities(engine.getState(), { type: "worker", with: ["position"] });
+```
+
+World storage stays game-agnostic: consumers define component meanings and run their
+own systems against the returned state.
+
 ## Scenarios and runner
 
 `scenarios/scenario.schema.json` describes v1 entities, resources, relationships,

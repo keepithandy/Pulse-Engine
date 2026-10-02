@@ -13,7 +13,7 @@ Pulse Engine owns simulation state, actions, rules, events, scheduling, seeded r
 Pre-alpha. The core roadmap (#1-#12) now has implementations for dispatch, immutable
 events, rules and decision traces, seeded randomness, snapshots, tick scheduling,
 plug-ins, JSON persistence/migration, validated scenarios, a headless runner and
-read-only diagnostics. Game consumers remain separate projects.
+read-only diagnostics, and a generic entity/component world model for game-owned simulation entities.
 
 ## Try it
 
@@ -24,7 +24,7 @@ node bin/pulse-run.js --scenario scenarios/resource-network.json --ticks 10
 ```
 
 Import `createEngine` from `src/index.js` in a browser or from the package in Node
-22+. Engine runtime code has no third-party dependencies; Playwright is a development
+22+. Add `createWorldPlugin()` to a system list for deterministic entity creation, component updates, and filtered world queries. Engine runtime code has no third-party dependencies; Playwright is a development
 dependency for compatibility checks. See [engine contracts](docs/engine-contracts.md)
 for API, snapshot compatibility, lifecycle, trace, migration and scheduler behavior.
 
