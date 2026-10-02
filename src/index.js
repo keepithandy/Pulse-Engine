@@ -6,6 +6,7 @@ export { createEngineFromScenario, validateScenario, exampleSystemRegistry, SCEN
 export { createEventJournal } from "./events.js";
 export { createPluginRegistry } from "./plugins.js";
 export { createSeededRandom } from "./random.js";
+export { createWorldPlugin, getEntity, queryEntities } from "./world.js";
 export {
   ENGINE_VERSION,
   SNAPSHOT_FORMAT,
