@@ -71,9 +71,8 @@ test("world data participates in snapshots, restores and deterministic replay", 
 test("invalid or unsafe world commands fail without changing engine state", () => {
   const engine = makeWorld();
   const before = engine.snapshot();
-  assert.throws(() => engine.dispatch({ type: "world/entity.create", entityType: "worker", components: {
-    "__proto__": { polluted: true }
-  } }), /must be a non-empty/);
+  const unsafeComponents = JSON.parse('{"__proto__":{"polluted":true}}');
+  assert.throws(() => engine.dispatch({ type: "world/entity.create", entityType: "worker", components: unsafeComponents }), /non-reserved/);
   assert.deepEqual(engine.snapshot(), before);
   assert.equal(engine.dispatch({ type: "world/entity.destroy", entityId: "missing" }).accepted, false);
   assert.deepEqual(engine.snapshot(), before);
